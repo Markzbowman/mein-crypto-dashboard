@@ -12,7 +12,7 @@ import streamlit as st
 def test_telegram():
     t_token = st.secrets["TELEGRAM_TOKEN"].strip()
     t_id = st.secrets["TELEGRAM_CHAT_ID"].strip()
-    test_url = f"https://telegram.org/bot{t_token}/sendMessage"
+    test_url = f"https://api.telegram.org/bot{t_token}/sendMessage"
     
     r = requests.post(test_url, json={"chat_id": t_id, "text": "🚀 Test-Nachricht vom Dashboard!"})
     
