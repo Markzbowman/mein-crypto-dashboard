@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
 
-SPOT_FAVS_MAP = {
+# Mapping für CoinGecko IDs
+SPOT_MAP = {
     "bitcoin": "BTCUSDT",
     "binancecoin": "BNBUSDT",
     "ripple": "XRPUSDT",
@@ -16,9 +17,10 @@ SPOT_FAVS_MAP = {
 }
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
+# URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-COINCAP_URL = "https://coincap.io"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
+CG_URL = "https://coingecko.com"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def send_telegram_alarm(message):
     try:
@@ -29,19 +31,21 @@ def send_telegram_alarm(message):
     except: pass
 
 def fetch_all_data():
-    # 1. Spot Preise via CoinCap (USA-freundlich)
     spot_prices = {}
+    # 1. Spot Preise via CoinGecko
     try:
-        resp = requests.get(COINCAP_URL, timeout=10)
-        data = resp.json().get('data', [])
-        for asset in data:
-            id_name = asset['id']
-            if id_name in SPOT_FAVS_MAP:
-                ticker = SPOT_FAVS_MAP[id_name]
-                spot_prices[ticker] = float(asset['priceUsd'])
+        params = {
+            "ids": ",".join(SPOT_MAP.keys()),
+            "vs_currencies": "usd"
+        }
+        cg_resp = requests.get(CG_URL, params=params, timeout=10)
+        cg_data = cg_resp.json()
+        for cg_id, ticker in SPOT_MAP.items():
+            if cg_id in cg_data:
+                spot_prices[ticker] = float(cg_data[cg_id]['usd'])
     except: pass
     
-    # 2. Alpha Preise
+    # 2. Alpha Preise via Binance BAPI
     alpha_raw = []
     try:
         alpha_resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
@@ -74,14 +78,14 @@ def check_alarm(symbol, current_price):
         st.session_state.price_history[symbol] = current_price
 
 with col1:
-    st.subheader("⭐ Spot Favoriten (via CoinCap)")
-    for ticker in SPOT_FAVS_MAP.values():
+    st.subheader("⭐ Spot Favoriten (CoinGecko)")
+    for ticker in SPOT_MAP.values():
         p = spot_prices.get(ticker, 0.0)
         if p > 0: check_alarm(ticker, p)
         st.metric(label=ticker, value=f"{p:,.4f}" if p > 0 else "Lade...")
 
 with col2:
-    st.subheader("🧪 Alpha Favoriten (via Binance)")
+    st.subheader("🧪 Alpha Favoriten (Binance)")
     fav_alpha = [t for t in alpha_raw if t.get('symbol', '').upper() in ALPHA_FAVS]
     for t in fav_alpha:
         s = t.get('symbol')
