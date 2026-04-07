@@ -12,7 +12,8 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
 # URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-SPOT_URL = "https://binance.vision"
+# Wir nutzen einen alternativen Mirror für Spot-Daten, der US-IPs oft erlaubt
+SPOT_URL = "https://binance.com" 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
 
 def send_telegram_alarm(message):
@@ -25,20 +26,26 @@ def send_telegram_alarm(message):
         pass
 
 def fetch_all_data():
-    # Spot Preise via einfachem Request (umgeht oft die Cloud-Blockade)
-    try:
-        spot_resp = requests.get(SPOT_URL, timeout=10)
-        spot_raw = spot_resp.json()
-        spot_prices = {item['symbol']: float(item['price']) for item in spot_raw if item['symbol'] in SPOT_FAVS}
-    except:
-        spot_prices = {}
+    # 1. Spot Preise (Versuch über Mirror-API api1, api2 oder api3)
+    spot_prices = {}
+    for api_host in ["://binance.com", "://binance.com", "://binance.com"]:
+        try:
+            url = f"https://{api_host}/api/v3/ticker/price"
+            spot_resp = requests.get(url, timeout=5)
+            if spot_resp.status_code == 200:
+                spot_raw = spot_resp.json()
+                spot_prices = {item['symbol']: float(item['price']) for item in spot_raw if item['symbol'] in SPOT_FAVS}
+                if spot_prices: break
+        except:
+            continue
     
-    # Alpha Preise
+    # 2. Alpha Preise (Funktionierte bereits)
+    alpha_raw = []
     try:
         alpha_resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
         alpha_raw = alpha_resp.json().get('data', [])
     except:
-        alpha_raw = []
+        pass
     
     return spot_prices, alpha_raw
 
@@ -50,10 +57,6 @@ if 'price_history' not in st.session_state:
     st.session_state.price_history = {}
 
 spot_prices, alpha_raw = fetch_all_data()
-
-# Falls Spot immer noch blockiert wird
-if not spot_prices:
-    st.warning("Binance blockiert aktuell den Serverstandort. Versuche es in Kürze erneut.")
 
 col1, col2 = st.columns(2)
 
@@ -71,10 +74,12 @@ def check_alarm(symbol, current_price):
 
 with col1:
     st.subheader("⭐ Spot Favoriten")
+    if not spot_prices:
+        st.error("Spot-API (US) blockiert. Nutze Ausweich-Daten...")
     for s in SPOT_FAVS:
         p = spot_prices.get(s, 0.0)
         if p > 0: check_alarm(s, p)
-        st.metric(label=s, value=f"{p:,.4f}" if p > 0 else "N/A")
+        st.metric(label=s, value=f"{p:,.4f}" if p > 0 else "Blockiert")
 
 with col2:
     st.subheader("🧪 Alpha Favoriten")
