@@ -49,7 +49,7 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 # --- TELEGRAM FUNKTION ---
 def send_telegram_msg(text):
     # Bau der URL: bot + Token verschmelzen
-    url = f"https://telegram.org/bot{T_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{T_TOKEN}/sendMessage"
     payload = {"chat_id": T_CHAT_ID, "text": text}
     try:
         r = requests.post(url, json=payload, timeout=8)
