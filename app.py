@@ -1,19 +1,21 @@
 import streamlit as st
 import pandas as pd
 import time
+import requests
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Binance Terminal", layout="wide")
 
-# CSS für kleine Schrift und kompakte Tabelle
+# CSS für kompakte Darstellung
 st.markdown("""
     <style>
     .small-font { font-size:12px !important; font-family: 'Courier New', Courier, monospace; }
-    div[data-testid="stTable"] { font-size: 12px !important; }
-    th { background-color: #1e1e1e !important; color: white !important; font-size: 11px !important; }
-    td { font-size: 11px !important; padding: 2px 5px !important; }
+    div[data-testid="stTable"] { font-size: 11px !important; }
+    table { width: 100% !important; }
+    th { background-color: #1e1e1e !important; color: white !important; font-size: 11px !important; text-align: left !important; }
+    td { font-size: 11px !important; padding: 2px 5px !important; border-bottom: 1px solid #333 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -28,13 +30,11 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 def get_interval_price(symbol, minutes=None, midnight=False):
     try:
         if midnight:
-            # Schweizer Mitternacht UTC+2
             tz_swiss = timezone(timedelta(hours=2))
             target_ts = datetime.now(tz_swiss).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         else:
             target_ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
         
-        # Hole den ersten Preis, der nach diesem Zeitpunkt gespeichert wurde
         res = supabase.table("price_history").select("price").eq("symbol", symbol).gte("created_at", target_ts).order("created_at", asc=True).limit(1).execute()
         if res.data:
             return float(res.data[0]['price'])
@@ -44,12 +44,13 @@ def get_interval_price(symbol, minutes=None, midnight=False):
 def calc_change(current, old):
     if not old or old == 0: return "0.00%"
     diff = ((current - old) / old) * 100
-    color = "green" if diff >= 0 else "red"
+    color = "#00ff00" if diff >= 0 else "#ff4b4b"
     return f'<span style="color:{color}">{diff:+.2f}%</span>'
 
 # --- UI ---
 tz_ch = timezone(timedelta(hours=2))
-now_ch = datetime.now(tz_ch).strftime("%H:%M:%S")
+now_obj = datetime.now(tz_ch)
+now_ch = now_obj.strftime("%H:%M:%S")
 
 st.markdown(f'<p class="small-font"><b>BINANCE LIVE-TICKER | UTC+2 | {now_ch}</b></p>', unsafe_allow_html=True)
 
@@ -69,7 +70,6 @@ def build_table(fav_list, is_alpha=False):
         p_1h = get_interval_price(s, minutes=60)
         p_day = get_interval_price(s, midnight=True)
         
-        # 10s Intervall simulieren wir durch den letzten Cache-Stand in der Session
         if f"last_{s}" not in st.session_state: st.session_state[f"last_{s}"] = curr
         p_10s = st.session_state[f"last_{s}"]
         st.session_state[f"last_{s}"] = curr
@@ -87,16 +87,18 @@ def build_table(fav_list, is_alpha=False):
         })
     return pd.DataFrame(rows)
 
-# Anzeige
 st.markdown('<p class="small-font">SPOT FAVORITEN</p>', unsafe_allow_html=True)
-df_spot = build_table(SPOT_FAVS)
-st.write(df_spot.to_html(escape=False, index=False), unsafe_allow_html=True)
+st.write(build_table(SPOT_FAVS).to_html(escape=False, index=False), unsafe_allow_html=True)
 
-st.markdown('<p class="small-font" style="margin-top:20px;">ALPHA FAVORITEN</p>', unsafe_allow_html=True)
-df_alpha = build_table(ALPHA_FAVS, is_alpha=True)
-st.write(df_alpha.to_html(escape=False, index=False), unsafe_allow_html=True)
+st.markdown('<p class="small-font" style="margin-top:15px;">ALPHA FAVORITEN</p>', unsafe_allow_html=True)
+st.write(build_table(ALPHA_FAVS, is_alpha=True).to_html(escape=False, index=False), unsafe_allow_html=True)
 
-st.markdown('<p style="font-size:10px; color:gray;">Leertaste am PC beendet / Auto-Refresh 30s</p>', unsafe_allow_html=True)
+# --- PRÄZISES TIMING FÜR NÄCHSTES UPDATE ---
+# Berechnet Sekunden bis zum nächsten 10s-Intervall (00, 10, 20...)
+current_seconds = now_obj.second
+wait_time = 10 - (current_seconds % 10)
+if wait_time == 0: wait_time = 10
 
-time.sleep(10)
+# Kleiner Puffer von 0.5s, damit die Daten auf dem Server sicher bereitstehen
+time.sleep(wait_time + 0.5)
 st.rerun()
