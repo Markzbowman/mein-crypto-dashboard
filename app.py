@@ -4,89 +4,68 @@ import time
 from datetime import datetime, timedelta, timezone
 
 # --- KONFIGURATION ---
-st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
+st.set_page_config(page_title="Binance Proxy Dashboard", layout="wide")
 
 SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
-# BAPI URLs (Diese funktionieren oft, wenn ://binance.com blockiert wird)
+# URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-MARKET_URL = "https://binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/spot/token/price/list"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
+SPOT_URL = "https://binance.com"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-def send_telegram_alarm(message):
+def fetch_via_proxy(target_url):
+    # Nutzt einen Proxy-Dienst, um die US-Blockade zu umgehen
     try:
-        token = st.secrets["TELEGRAM_TOKEN"]
-        chat_id = st.secrets["TELEGRAM_CHAT_ID"]
-        url = f"https://telegram.org{token}/sendMessage"
-        requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
-    except: pass
+        proxy_api_key = st.secrets["PROXY_API_KEY"]
+        # Wir senden die Binance-URL als Parameter an den Proxy-Dienst
+        proxy_url = f"https://webscraping.ai{proxy_api_key}&url={target_url}"
+        resp = requests.get(proxy_url, timeout=15)
+        return resp.json()
+    except Exception as e:
+        return None
 
 def fetch_data():
-    spot_results = {}
-    alpha_results = []
+    # 1. Spot Preise via Proxy (umgeht Blockade)
+    spot_prices = {}
+    raw_spot = fetch_via_proxy(SPOT_URL)
+    if raw_spot:
+        spot_prices = {item['symbol']: float(item['price']) for item in raw_spot if item['symbol'] in SPOT_FAVS}
     
-    # 1. Spot-Daten via Marketing-BAPI (Web-Interface Mirror)
+    # 2. Alpha Preise (Direkt, da es bei dir funktioniert)
+    alpha_raw = []
     try:
-        res = requests.get(MARKET_URL, timeout=10).json()
-        for item in res.get('data', []):
-            symbol = item.get('symbol')
-            if symbol in SPOT_FAVS:
-                spot_results[symbol] = float(item.get('price', 0))
+        resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
+        alpha_raw = resp.json().get('data', [])
     except: pass
     
-    # --- PAUSE EINBAUEN ---
-    # Hier wartet das Skript 2 Sekunden, bevor es die Alpha-API fragt
-    time.sleep(2) 
-
-    # 2. Alpha-Daten (wie bisher)
-    try:
-        res = requests.get(ALPHA_URL, headers=HEADERS, timeout=10).json()
-        for t in res.get('data', []):
-            sym = t.get('symbol', '').upper()
-            if sym in ALPHA_FAVS:
-                alpha_results.append({'symbol': sym, 'price': float(t.get('price') or 0)})
-    except: pass
-    
-    return spot_results, alpha_results
+    return spot_prices, alpha_raw
 
 # --- UI ---
-st.title("🚀 Binance Live Dashboard & Alarme")
+st.title("🚀 Binance Dashboard (Proxy Mode)")
 st.write(f"Update: {datetime.now(timezone(timedelta(hours=2))).strftime('%H:%M:%S')} (CH)")
 
-if 'price_history' not in st.session_state:
-    st.session_state.price_history = {}
+# Secrets Check
+if "PROXY_API_KEY" not in st.secrets:
+    st.error("Bitte PROXY_API_KEY in den Streamlit Secrets hinterlegen!")
 
-spot_prices, alpha_favs = fetch_data()
+spot_prices, alpha_raw = fetch_data()
 
 col1, col2 = st.columns(2)
 
-def check_alarm(symbol, current_price):
-    if current_price <= 0: return
-    if symbol in st.session_state.price_history:
-        old_price = st.session_state.price_history[symbol]
-        diff = ((current_price - old_price) / old_price) * 100
-        if abs(diff) >= 2.0:
-            direction = "📈" if diff > 0 else "📉"
-            send_telegram_alarm(f"🔔 ALARM: {symbol} {direction} {diff:.2f}%\nPreis: {current_price}")
-            st.session_state.price_history[symbol] = current_price
-    else:
-        st.session_state.price_history[symbol] = current_price
-
 with col1:
-    st.subheader("⭐ Spot Favoriten (Web-API)")
+    st.subheader("⭐ Spot Favoriten (via Proxy)")
+    if not spot_prices:
+        st.warning("Proxy liefert aktuell keine Spot-Daten.")
     for s in SPOT_FAVS:
         p = spot_prices.get(s, 0.0)
-        if p > 0: check_alarm(s, p)
         st.metric(label=s, value=f"{p:,.2f}" if p > 0 else "Lade...")
 
 with col2:
-    st.subheader("🧪 Alpha Favoriten")
-    for t in alpha_favs:
-        s = t['symbol']
-        p = t['price']
-        if p > 0: check_alarm(s, p)
-        st.metric(label=s, value=f"{p:,.6f}")
+    st.subheader("🧪 Alpha Favoriten (Direkt)")
+    fav_alpha = [t for t in alpha_raw if t.get('symbol', '').upper() in ALPHA_FAVS]
+    for t in fav_alpha:
+        st.metric(label=t.get('symbol'), value=f"{float(t.get('price') or 0):,.6f}")
 
 time.sleep(30)
 st.rerun()
