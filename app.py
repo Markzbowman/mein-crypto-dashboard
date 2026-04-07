@@ -6,13 +6,13 @@ from datetime import datetime, timedelta, timezone
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
 
-# Favoriten
-SPOT_FAVS = ["BTC", "BNB", "XRP", "ETH", "ZEC"] # Hier nur die Ticker ohne USDT
+SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
-# Wir nutzen NUR diese URL, da wir wissen, dass sie funktioniert
+# BAPI URLs (Diese funktionieren oft, wenn ://binance.com blockiert wird)
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+MARKET_URL = "https://binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/spot/token/price/list"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
 
 def send_telegram_alarm(message):
     try:
@@ -22,29 +22,29 @@ def send_telegram_alarm(message):
         requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
     except: pass
 
-def fetch_everything():
+def fetch_data():
+    spot_results = {}
+    alpha_results = []
+    
+    # 1. Spot-Daten via Marketing-BAPI (Web-Interface Mirror)
     try:
-        resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
-        all_tokens = resp.json().get('data', [])
-        
-        spot_results = {}
-        alpha_results = []
-        
-        for t in all_tokens:
+        res = requests.get(MARKET_URL, timeout=10).json()
+        for item in res.get('data', []):
+            symbol = item.get('symbol')
+            if symbol in SPOT_FAVS:
+                spot_results[symbol] = float(item.get('price', 0))
+    except: pass
+    
+    # 2. Alpha-Daten (wie bisher)
+    try:
+        res = requests.get(ALPHA_URL, headers=HEADERS, timeout=10).json()
+        for t in res.get('data', []):
             sym = t.get('symbol', '').upper()
-            price = float(t.get('price') or t.get('lastPrice') or 0)
-            
-            # 1. Prüfen ob es einer unserer Spot-Favoriten ist
-            if sym in SPOT_FAVS:
-                spot_results[f"{sym}USDT"] = price
-                
-            # 2. Prüfen ob es einer unserer Alpha-Favoriten ist
             if sym in ALPHA_FAVS:
-                alpha_results.append({'symbol': sym, 'price': price})
-                
-        return spot_results, alpha_results
-    except:
-        return {}, []
+                alpha_results.append({'symbol': sym, 'price': float(t.get('price') or 0)})
+    except: pass
+    
+    return spot_results, alpha_results
 
 # --- UI ---
 st.title("🚀 Binance Live Dashboard & Alarme")
@@ -53,7 +53,7 @@ st.write(f"Update: {datetime.now(timezone(timedelta(hours=2))).strftime('%H:%M:%
 if 'price_history' not in st.session_state:
     st.session_state.price_history = {}
 
-spot_prices, alpha_favs = fetch_everything()
+spot_prices, alpha_favs = fetch_data()
 
 col1, col2 = st.columns(2)
 
@@ -70,11 +70,11 @@ def check_alarm(symbol, current_price):
         st.session_state.price_history[symbol] = current_price
 
 with col1:
-    st.subheader("⭐ Spot Favoriten (via Alpha-Tunnel)")
-    for s in [f"{x}USDT" for x in SPOT_FAVS]:
+    st.subheader("⭐ Spot Favoriten (Web-API)")
+    for s in SPOT_FAVS:
         p = spot_prices.get(s, 0.0)
         if p > 0: check_alarm(s, p)
-        st.metric(label=s, value=f"{p:,.2f}" if p > 0 else "Warte auf API...")
+        st.metric(label=s, value=f"{p:,.2f}" if p > 0 else "Lade...")
 
 with col2:
     st.subheader("🧪 Alpha Favoriten")
