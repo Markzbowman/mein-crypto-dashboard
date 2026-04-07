@@ -86,7 +86,7 @@ while True:
                 last_alert_time = st.session_state.alerts_sent.get(s)
                 if last_alert_time is None or (time.time() - last_alert_time > 120):
                     direction = "🟢" if diff > 0 else "🔴"
-                    msg = f"{direction} {s} | {diff:+.2f}% (1m) | {curr:.5f}"
+                    msg = f"{direction} {s}  |  {diff:+.2f}%  (1m)  |  {curr:.5f}"
                     if send_telegram_msg(msg):
                         st.session_state.alerts_sent[s] = time.time()
 
