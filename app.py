@@ -68,5 +68,5 @@ with col2:
         process_display(a, db_data.get(a, 0.0), is_alpha=True)
 
 # Automatischer Refresh
-time.sleep(30)
+time.sleep(10)
 st.rerun()
