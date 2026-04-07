@@ -7,19 +7,12 @@ from datetime import datetime, timedelta, timezone
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
 
-# Mapping für CoinGecko IDs
-SPOT_MAP = {
-    "bitcoin": "BTCUSDT",
-    "binancecoin": "BNBUSDT",
-    "ripple": "XRPUSDT",
-    "ethereum": "ETHUSDT",
-    "zcash": "ZECUSDT"
-}
+# Favoriten
+SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
 # URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-CG_URL = "https://coingecko.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def send_telegram_alarm(message):
@@ -30,38 +23,47 @@ def send_telegram_alarm(message):
         requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
     except: pass
 
-def fetch_all_data():
-    spot_prices = {}
-    # 1. Spot Preise via CoinGecko
+def fetch_spot_fallback():
+    # Quelle 1: CryptoCompare (Sehr stabil für US-Server)
     try:
-        params = {
-            "ids": ",".join(SPOT_MAP.keys()),
-            "vs_currencies": "usd"
+        url = "https://cryptocompare.com"
+        res = requests.get(url, timeout=5).json()
+        return {
+            "BTCUSDT": float(res["BTC"]["USD"]),
+            "BNBUSDT": float(res["BNB"]["USD"]),
+            "XRPUSDT": float(res["XRP"]["USD"]),
+            "ETHUSDT": float(res["ETH"]["USD"]),
+            "ZECUSDT": float(res["ZEC"]["USD"])
         }
-        cg_resp = requests.get(CG_URL, params=params, timeout=10)
-        cg_data = cg_resp.json()
-        for cg_id, ticker in SPOT_MAP.items():
-            if cg_id in cg_data:
-                spot_prices[ticker] = float(cg_data[cg_id]['usd'])
     except: pass
-    
-    # 2. Alpha Preise via Binance BAPI
-    alpha_raw = []
-    try:
-        alpha_resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
-        alpha_raw = alpha_resp.json().get('data', [])
-    except: pass
-    
-    return spot_prices, alpha_raw
 
-# --- DASHBOARD UI ---
+    # Quelle 2: KuCoin API (Oft nicht blockiert)
+    try:
+        prices = {}
+        for s in ["BTC-USDT", "BNB-USDT", "XRP-USDT", "ETH-USDT", "ZEC-USDT"]:
+            url = f"https://kucoin.com{s}"
+            res = requests.get(url, timeout=5).json()
+            prices[s.replace("-", "")] = float(res["data"]["price"])
+        return prices
+    except: pass
+    
+    return {}
+
+def fetch_alpha():
+    try:
+        resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
+        return resp.json().get('data', [])
+    except: return []
+
+# --- UI ---
 st.title("🚀 Binance Live Dashboard & Alarme")
 st.write(f"Update: {datetime.now(timezone(timedelta(hours=2))).strftime('%H:%M:%S')} (CH)")
 
 if 'price_history' not in st.session_state:
     st.session_state.price_history = {}
 
-spot_prices, alpha_raw = fetch_all_data()
+spot_prices = fetch_spot_fallback()
+alpha_raw = fetch_alpha()
 
 col1, col2 = st.columns(2)
 
@@ -78,11 +80,11 @@ def check_alarm(symbol, current_price):
         st.session_state.price_history[symbol] = current_price
 
 with col1:
-    st.subheader("⭐ Spot Favoriten (CoinGecko)")
-    for ticker in SPOT_MAP.values():
-        p = spot_prices.get(ticker, 0.0)
-        if p > 0: check_alarm(ticker, p)
-        st.metric(label=ticker, value=f"{p:,.4f}" if p > 0 else "Lade...")
+    st.subheader("⭐ Spot Favoriten (Multi-Quelle)")
+    for s in SPOT_FAVS:
+        p = spot_prices.get(s, 0.0)
+        if p > 0: check_alarm(s, p)
+        st.metric(label=s, value=f"{p:,.4f}" if p > 0 else "Offline")
 
 with col2:
     st.subheader("🧪 Alpha Favoriten (Binance)")
