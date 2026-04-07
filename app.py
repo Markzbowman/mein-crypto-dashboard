@@ -35,6 +35,10 @@ def fetch_data():
                 spot_results[symbol] = float(item.get('price', 0))
     except: pass
     
+    # --- PAUSE EINBAUEN ---
+    # Hier wartet das Skript 2 Sekunden, bevor es die Alpha-API fragt
+    time.sleep(2) 
+
     # 2. Alpha-Daten (wie bisher)
     try:
         res = requests.get(ALPHA_URL, headers=HEADERS, timeout=10).json()
