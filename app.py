@@ -5,6 +5,25 @@ import requests
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
+# --- TEST-BLOCK START ---
+import requests
+import streamlit as st
+
+def test_telegram():
+    t_token = st.secrets["TELEGRAM_TOKEN"].strip()
+    t_id = st.secrets["TELEGRAM_CHAT_ID"].strip()
+    test_url = f"https://telegram.org/bot{t_token}/sendMessage"
+    
+    r = requests.post(test_url, json={"chat_id": t_id, "text": "🚀 Test-Nachricht vom Dashboard!"})
+    
+    if r.status_code == 200:
+        st.success(f"Test-Erfolg! Nachricht wurde an ID {t_id} gesendet.")
+    else:
+        st.error(f"Test-Fehler! Code: {r.status_code}, Antwort: {r.text}")
+
+test_telegram()
+# --- TEST-BLOCK ENDE ---
+
 # --- CONFIG ---
 st.set_page_config(page_title="Binance Terminal", layout="wide")
 
