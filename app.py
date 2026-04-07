@@ -1,12 +1,21 @@
 import streamlit as st
 import pandas as pd
 import time
-import requests
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
 
 # --- KONFIGURATION ---
-st.set_page_config(page_title="Krypto Live Charts", layout="wide")
+st.set_page_config(page_title="Binance Terminal", layout="wide")
+
+# CSS für kleine Schrift und kompakte Tabelle
+st.markdown("""
+    <style>
+    .small-font { font-size:12px !important; font-family: 'Courier New', Courier, monospace; }
+    div[data-testid="stTable"] { font-size: 12px !important; }
+    th { background-color: #1e1e1e !important; color: white !important; font-size: 11px !important; }
+    td { font-size: 11px !important; padding: 2px 5px !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 # Supabase Verbindung
 URL = st.secrets["SUPABASE_URL"]
@@ -16,74 +25,78 @@ supabase = create_client(URL, KEY)
 SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
-# --- FUNKTIONEN ---
-def send_telegram_alarm(message):
+def get_interval_price(symbol, minutes=None, midnight=False):
     try:
-        t_token = st.secrets["TELEGRAM_TOKEN"]
-        t_id = st.secrets["TELEGRAM_CHAT_ID"]
-        requests.post(f"https://telegram.org{t_token}/sendMessage", 
-                      json={"chat_id": t_id, "text": message}, timeout=5)
+        if midnight:
+            # Schweizer Mitternacht UTC+2
+            tz_swiss = timezone(timedelta(hours=2))
+            target_ts = datetime.now(tz_swiss).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        else:
+            target_ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+        
+        # Hole den ersten Preis, der nach diesem Zeitpunkt gespeichert wurde
+        res = supabase.table("price_history").select("price").eq("symbol", symbol).gte("created_at", target_ts).order("created_at", asc=True).limit(1).execute()
+        if res.data:
+            return float(res.data[0]['price'])
     except: pass
+    return None
 
-def get_history(symbol):
-    try:
-        # Holt die letzten 20 Datenpunkte
-        res = supabase.table("price_history").select("price, created_at").eq("symbol", symbol).order("created_at", desc=True).limit(20).execute()
-        df = pd.DataFrame(res.data)
-        if not df.empty:
-            df = df.sort_values("created_at")
-            return df["price"]
-    except:
-        return None
+def calc_change(current, old):
+    if not old or old == 0: return "0.00%"
+    diff = ((current - old) / old) * 100
+    color = "green" if diff >= 0 else "red"
+    return f'<span style="color:{color}">{diff:+.2f}%</span>'
 
-# --- UI DASHBOARD ---
-st.title("📈 Live Charts (Home-Bridge)")
-st.write(f"Zuletzt aktualisiert: {datetime.now(timezone(timedelta(hours=2))).strftime('%H:%M:%S')}")
+# --- UI ---
+tz_ch = timezone(timedelta(hours=2))
+now_ch = datetime.now(tz_ch).strftime("%H:%M:%S")
 
-if 'price_history_alert' not in st.session_state:
-    st.session_state.price_history_alert = {}
+st.markdown(f'<p class="small-font"><b>BINANCE LIVE-TICKER | UTC+2 | {now_ch}</b></p>', unsafe_allow_html=True)
 
-# Aktuelle Preise laden
+# Daten laden
 try:
     response = supabase.table("Binance_Prices").select("*").execute()
-    db_data = {item['symbol']: float(item['price']) for item in response.data}
+    current_data = {item['symbol']: float(item['price']) for item in response.data}
 except:
-    db_data = {}
+    current_data = {}
 
-col1, col2 = st.columns(2)
+def build_table(fav_list, is_alpha=False):
+    rows = []
+    for s in fav_list:
+        curr = current_data.get(s, 0.0)
+        p_1m = get_interval_price(s, minutes=1)
+        p_5m = get_interval_price(s, minutes=5)
+        p_1h = get_interval_price(s, minutes=60)
+        p_day = get_interval_price(s, midnight=True)
+        
+        # 10s Intervall simulieren wir durch den letzten Cache-Stand in der Session
+        if f"last_{s}" not in st.session_state: st.session_state[f"last_{s}"] = curr
+        p_10s = st.session_state[f"last_{s}"]
+        st.session_state[f"last_{s}"] = curr
 
-# Hilfsfunktion für Metrik + Chart
-def display_with_chart(symbol, price, is_alpha=False):
-    if price <= 0: return
-    
-    # 2% Alarm-Logik
-    if symbol in st.session_state.price_history_alert:
-        old = st.session_state.price_history_alert[symbol]
-        diff = ((price - old) / old) * 100
-        if abs(diff) >= 2.0:
-            send_telegram_alarm(f"🔔 {symbol}: {diff:+.2f}% ({price})")
-            st.session_state.price_history_alert[symbol] = price
-    else:
-        st.session_state.price_history_alert[symbol] = price
+        price_format = f"{curr:,.6f}" if is_alpha else f"{curr:,.2f}"
+        
+        rows.append({
+            "Symbol": s,
+            "Preis": price_format,
+            "10s": calc_change(curr, p_10s),
+            "1m": calc_change(curr, p_1m),
+            "5m": calc_change(curr, p_5m),
+            "1h": calc_change(curr, p_1h),
+            "00:00": calc_change(curr, p_day)
+        })
+    return pd.DataFrame(rows)
 
-    # Anzeige Metrik
-    st.metric(label=symbol, value=f"{price:,.6f}" if is_alpha else f"{price:,.2f}")
-    
-    # Anzeige Chart
-    hist = get_history(symbol)
-    if hist is not None:
-        st.line_chart(hist, height=120, use_container_width=True)
+# Anzeige
+st.markdown('<p class="small-font">SPOT FAVORITEN</p>', unsafe_allow_html=True)
+df_spot = build_table(SPOT_FAVS)
+st.write(df_spot.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-with col1:
-    st.subheader("⭐ Spot")
-    for s in SPOT_FAVS:
-        display_with_chart(s, db_data.get(s, 0.0))
+st.markdown('<p class="small-font" style="margin-top:20px;">ALPHA FAVORITEN</p>', unsafe_allow_html=True)
+df_alpha = build_table(ALPHA_FAVS, is_alpha=True)
+st.write(df_alpha.to_html(escape=False, index=False), unsafe_allow_html=True)
 
-with col2:
-    st.subheader("🧪 Alpha")
-    for a in ALPHA_FAVS:
-        display_with_chart(a, db_data.get(a, 0.0), is_alpha=True)
+st.markdown('<p style="font-size:10px; color:gray;">Leertaste am PC beendet / Auto-Refresh 30s</p>', unsafe_allow_html=True)
 
-# Automatischer Refresh
 time.sleep(10)
 st.rerun()
