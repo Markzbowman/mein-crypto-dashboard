@@ -16,7 +16,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Supabase & Telegram Setup
+# Daten aus Secrets
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 T_TOKEN = st.secrets["TELEGRAM_TOKEN"].strip()
@@ -27,36 +27,41 @@ supabase = create_client(URL, KEY)
 SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
-# --- TELEGRAM FUNKTION (Die sicherste Version) ---
+# --- TELEGRAM FUNKTION ---
 def send_telegram_msg(text):
-    # Bau der URL ohne Plus-Zeichen Gefahr
-    url = f"https://telegram.org/bot8774900378:AAHhnUzqBDBoJD-1CtLNrk7VvyFoj4K6eNY/sendMessage"
+    # Bau der URL: bot + Token verschmelzen
+    url = f"https://telegram.org/bot{T_TOKEN}/sendMessage"
     payload = {"chat_id": T_CHAT_ID, "text": text}
     try:
         r = requests.post(url, json=payload, timeout=8)
-        if r.status_code != 200:
-            st.error(f"Telegram meldet Fehler: {r.text}")
-        return True
+        if r.status_code == 200:
+            return True
+        else:
+            st.error(f"Telegram Fehler: {r.text}")
+            return False
     except Exception as e:
-        st.error(f"Telegram Verbindungsfehler: {e}")
+        st.error(f"Telegram Verbindung fehlgeschlagen: {e}")
         return False
 
 def get_closest_price(symbol, minutes=None, midnight=False):
     try:
         tz_swiss = timezone(timedelta(hours=2))
-        target = datetime.now(tz_swiss).replace(hour=0, minute=0, second=0, microsecond=0) if midnight else datetime.now(tz_swiss) - timedelta(minutes=minutes)
+        if midnight:
+            target = datetime.now(tz_swiss).replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            target = datetime.now(tz_swiss) - timedelta(minutes=minutes)
+        
         res = supabase.table("price_history").select("price").eq("symbol", symbol).lte("created_at", target.isoformat()).order("created_at", desc=True).limit(1).execute()
         return float(res.data[0]['price']) if res.data else None
     except: return None
 
-def calc_change(current, old):
-    if old is None or old == 0: return "---"
-    diff = ((current - old) / old) * 100
-    color = "#00ff00" if diff >= 0 else "#ff4b4b"
-    return f'<span style="color:{color}">{diff:+.2f}%</span>', diff
-
 # Platzhalter
 main_container = st.empty()
+debug_container = st.empty()
+
+# ALARM LOGIK (Aussertahl des Loops um State zu halten)
+if 'alerts_sent' not in st.session_state:
+    st.session_state.alerts_sent = {}
 
 while True:
     now_full = datetime.now(timezone(timedelta(hours=2)))
@@ -67,21 +72,26 @@ while True:
         current_data = {item['symbol']: float(item['price']) for item in res.data}
     except: current_data = {}
 
-    # ALARME PRÜFEN (Separat von der Tabellen-Erstellung)
+    # --- ALARM CHECK ---
     for s in SPOT_FAVS + ALPHA_FAVS:
         curr = current_data.get(s, 0.0)
         p_1m = get_closest_price(s, minutes=1)
+        
         if curr > 0 and p_1m:
             diff = ((curr - p_1m) / p_1m) * 100
-            # TEST-ALARM: 0.4%
+            
+            # Wir prüfen die 0.4% Schwelle
             if abs(diff) >= 0.4:
-                # Spam Schutz: Nur alle 2 Minuten pro Coin
-                if f"alert_{s}" not in st.session_state or time.time() - st.session_state[f"alert_{s}"] > 120:
-                    icon = "🚀" if diff > 0 else "🩸"
-                    if send_telegram_msg(f"{icon} ALARM: {s}\nBewegung: {diff:+.2f}% (1m)\nPreis: {curr}"):
-                        st.session_state[f"alert_{s}"] = time.time()
+                # Nur alle 5 Minuten einen Alarm pro Coin, um Spam zu vermeiden
+                last_alert_time = st.session_state.alerts_sent.get(s)
+                if last_alert_time is None or (time.time() - last_alert_time > 300):
+                    direction = "🚀" if diff > 0 else "🩸"
+                    msg = f"{direction} ALARM: {s}\nBewegung: {diff:+.2f}% (1m)\nPreis: {curr}"
+                    if send_telegram_msg(msg):
+                        st.session_state.alerts_sent[s] = time.time()
+                        st.success(f"Alarm gesendet für {s}!")
 
-    # TABELLE BAUEN
+    # --- TABELLE BAUEN ---
     def build_table(fav_list, is_alpha=False):
         rows = []
         for s in fav_list:
@@ -91,20 +101,21 @@ while True:
             p_1h = get_closest_price(s, minutes=60)
             p_day = get_closest_price(s, midnight=True)
             
-            # 10s Logik
+            # 10s Differenz
             last_key = f"last_val_{s}"
             p_10s = st.session_state.get(last_key, curr)
             st.session_state[last_key] = curr
 
-            price_str = f"{curr:,.6f}" if is_alpha else f"{curr:,.2f}"
-            
+            def fmt_chg(c, o):
+                if not o: return "---"
+                d = ((c-o)/o)*100
+                color = "#00ff00" if d >= 0 else "#ff4b4b"
+                return f'<span style="color:{color}">{d:+.2f}%</span>'
+
             rows.append({
-                "Symbol": s, "Preis": price_str,
-                "10s": calc_change(curr, p_10s)[0],
-                "1m": calc_change(curr, p_1m)[0],
-                "5m": calc_change(curr, p_5m)[0],
-                "1h": calc_change(curr, p_1h)[0],
-                "00:00": calc_change(curr, p_day)[0]
+                "Symbol": s, "Preis": f"{curr:,.6f}" if is_alpha else f"{curr:,.2f}",
+                "10s": fmt_chg(curr, p_10s), "1m": fmt_chg(curr, p_1m),
+                "5m": fmt_chg(curr, p_5m), "1h": fmt_chg(curr, p_1h), "00:00": fmt_chg(curr, p_day)
             })
         return pd.DataFrame(rows)
 
