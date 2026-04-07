@@ -12,7 +12,7 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
 # URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-SPOT_URL = "https://www.binance.com/de/trade"
+SPOT_URL = "https://binance.vision"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
 
 def send_telegram_alarm(message):
