@@ -84,12 +84,11 @@ while True:
             if abs(diff) >= 0.4:
                 # Nur alle 5 Minuten einen Alarm pro Coin, um Spam zu vermeiden
                 last_alert_time = st.session_state.alerts_sent.get(s)
-                if last_alert_time is None or (time.time() - last_alert_time > 300):
+                if last_alert_time is None or (time.time() - last_alert_time > 120):
                     direction = "🟢" if diff > 0 else "🔴"
                     msg = f"{direction} {s}\n {diff:+.2f}% (1m)\n {curr}"
                     if send_telegram_msg(msg):
                         st.session_state.alerts_sent[s] = time.time()
-                        st.success(f"Alarm gesendet für {s}!")
 
     # --- TABELLE BAUEN ---
     def build_table(fav_list, is_alpha=False):
