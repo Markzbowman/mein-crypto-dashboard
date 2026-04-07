@@ -49,8 +49,11 @@ def calc_change(current, old):
 
 # --- UI ---
 tz_ch = timezone(timedelta(hours=2))
-now_obj = datetime.now(tz_ch)
-now_ch = now_obj.strftime("%H:%M:%S")
+now_full = datetime.now(tz_ch)
+
+# KORREKTUR: Zeit auf das letzte 10s-Intervall abrunden für die Anzeige
+display_seconds = (now_full.second // 10) * 100 // 10 # Ergibt 0, 10, 20...
+now_ch = now_full.replace(second=display_seconds, microsecond=0).strftime("%H:%M:%S")
 
 st.markdown(f'<p class="small-font"><b>BINANCE LIVE-TICKER | UTC+2 | {now_ch}</b></p>', unsafe_allow_html=True)
 
@@ -93,12 +96,9 @@ st.write(build_table(SPOT_FAVS).to_html(escape=False, index=False), unsafe_allow
 st.markdown('<p class="small-font" style="margin-top:15px;">ALPHA FAVORITEN</p>', unsafe_allow_html=True)
 st.write(build_table(ALPHA_FAVS, is_alpha=True).to_html(escape=False, index=False), unsafe_allow_html=True)
 
-# --- PRÄZISES TIMING FÜR NÄCHSTES UPDATE ---
-# Berechnet Sekunden bis zum nächsten 10s-Intervall (00, 10, 20...)
-current_seconds = now_obj.second
+# --- PRÄZISES TIMING ---
+current_seconds = now_full.second
 wait_time = 10 - (current_seconds % 10)
-if wait_time == 0: wait_time = 10
-
-# Kleiner Puffer von 0.5s, damit die Daten auf dem Server sicher bereitstehen
-time.sleep(wait_time + 0.5)
+# Wir reduzieren den Puffer auf 0.2s für schnellere Reaktion
+time.sleep(wait_time + 0.2)
 st.rerun()
