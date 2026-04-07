@@ -11,7 +11,7 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
 # URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-SPOT_URL = "https://binance.com"
+SPOT_URL = "https://binance.com/api/v3/ticker/price"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 def fetch_via_proxy(target_url):
