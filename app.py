@@ -30,13 +30,20 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 # --- FUNKTIONEN ---
 
 def send_telegram_msg(text):
-    url = f"https://telegram.org{T_TOKEN}/sendMessage"
+    # KORREKTE URL-Zusammensetzung
+    token = st.secrets["TELEGRAM_TOKEN"]
+    chat_id = st.secrets["TELEGRAM_CHAT_ID"]
+    
+    # WICHTIG: Das Wort 'bot' muss direkt vor den Token
+    url = f"https://telegram.org{token}/sendMessage"
+    
     try:
-        r = requests.post(url, json={"chat_id": T_CHAT_ID, "text": text}, timeout=5)
+        r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=5)
         if r.status_code != 200:
-            st.error(f"Telegram Fehler: {r.text}")
+            st.error(f"Telegram Fehler (Code {r.status_code}): {r.text}")
     except Exception as e:
         st.error(f"Verbindungsfehler zu Telegram: {e}")
+
 
 def get_closest_price(symbol, minutes=None, midnight=False):
     try:
