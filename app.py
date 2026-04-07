@@ -7,13 +7,17 @@ from datetime import datetime, timedelta, timezone
 # --- KONFIGURATION ---
 st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
 
-SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
+SPOT_FAVS_MAP = {
+    "bitcoin": "BTCUSDT",
+    "binancecoin": "BNBUSDT",
+    "ripple": "XRPUSDT",
+    "ethereum": "ETHUSDT",
+    "zcash": "ZECUSDT"
+}
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 
-# URLs
 ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
-# Wir nutzen einen alternativen Mirror für Spot-Daten, der US-IPs oft erlaubt
-SPOT_URL = "https://binance.com" 
+COINCAP_URL = "https://coincap.io"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
 
 def send_telegram_alarm(message):
@@ -22,30 +26,27 @@ def send_telegram_alarm(message):
         chat_id = st.secrets["TELEGRAM_CHAT_ID"]
         url = f"https://telegram.org{token}/sendMessage"
         requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=5)
-    except:
-        pass
+    except: pass
 
 def fetch_all_data():
-    # 1. Spot Preise (Versuch über Mirror-API api1, api2 oder api3)
+    # 1. Spot Preise via CoinCap (USA-freundlich)
     spot_prices = {}
-    for api_host in ["://binance.com", "://binance.com", "://binance.com"]:
-        try:
-            url = f"https://{api_host}/api/v3/ticker/price"
-            spot_resp = requests.get(url, timeout=5)
-            if spot_resp.status_code == 200:
-                spot_raw = spot_resp.json()
-                spot_prices = {item['symbol']: float(item['price']) for item in spot_raw if item['symbol'] in SPOT_FAVS}
-                if spot_prices: break
-        except:
-            continue
+    try:
+        resp = requests.get(COINCAP_URL, timeout=10)
+        data = resp.json().get('data', [])
+        for asset in data:
+            id_name = asset['id']
+            if id_name in SPOT_FAVS_MAP:
+                ticker = SPOT_FAVS_MAP[id_name]
+                spot_prices[ticker] = float(asset['priceUsd'])
+    except: pass
     
-    # 2. Alpha Preise (Funktionierte bereits)
+    # 2. Alpha Preise
     alpha_raw = []
     try:
         alpha_resp = requests.get(ALPHA_URL, headers=HEADERS, timeout=10)
         alpha_raw = alpha_resp.json().get('data', [])
-    except:
-        pass
+    except: pass
     
     return spot_prices, alpha_raw
 
@@ -73,16 +74,14 @@ def check_alarm(symbol, current_price):
         st.session_state.price_history[symbol] = current_price
 
 with col1:
-    st.subheader("⭐ Spot Favoriten")
-    if not spot_prices:
-        st.error("Spot-API (US) blockiert. Nutze Ausweich-Daten...")
-    for s in SPOT_FAVS:
-        p = spot_prices.get(s, 0.0)
-        if p > 0: check_alarm(s, p)
-        st.metric(label=s, value=f"{p:,.4f}" if p > 0 else "Blockiert")
+    st.subheader("⭐ Spot Favoriten (via CoinCap)")
+    for ticker in SPOT_FAVS_MAP.values():
+        p = spot_prices.get(ticker, 0.0)
+        if p > 0: check_alarm(ticker, p)
+        st.metric(label=ticker, value=f"{p:,.4f}" if p > 0 else "Lade...")
 
 with col2:
-    st.subheader("🧪 Alpha Favoriten")
+    st.subheader("🧪 Alpha Favoriten (via Binance)")
     fav_alpha = [t for t in alpha_raw if t.get('symbol', '').upper() in ALPHA_FAVS]
     for t in fav_alpha:
         s = t.get('symbol')
