@@ -32,9 +32,11 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 def send_telegram_msg(text):
     url = f"https://telegram.org{T_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={"chat_id": T_CHAT_ID, "text": text}, timeout=5)
-    except:
-        pass
+        r = requests.post(url, json={"chat_id": T_CHAT_ID, "text": text}, timeout=5)
+        if r.status_code != 200:
+            st.error(f"Telegram Fehler: {r.text}")
+    except Exception as e:
+        st.error(f"Verbindungsfehler zu Telegram: {e}")
 
 def get_closest_price(symbol, minutes=None, midnight=False):
     try:
@@ -52,7 +54,7 @@ def get_closest_price(symbol, minutes=None, midnight=False):
             .limit(1).execute()
             
         if res.data:
-            return float(res.data[0]['price']) # Korrektur: Index [0] für den Zugriff
+            return float(res.data[0]['price']) # Korrektur: Index-Zugriff gefixt
     except: pass
     return None
 
@@ -60,15 +62,18 @@ def calc_change_and_alarm(symbol, current, old, threshold=0.4):
     if old is None or old == 0: return "---"
     diff = ((current - old) / old) * 100
     
-    # ALARM LOGIK: Wenn Abweichung >= 0.4%
+    # ALARM LOGIK
     if abs(diff) >= threshold:
-        # Wir speichern in der Session, dass wir für diesen Preisstand bereits gewarnt haben
-        alert_key = f"alert_{symbol}_{old}"
-        if alert_key not in st.session_state:
+        # Prüfen, ob wir diesen speziellen Alarm heute schon gesendet haben (Reset alle 60 Sek)
+        alert_key = f"alert_{symbol}"
+        now = time.time()
+        last_alert = st.session_state.get(f"{alert_key}_time", 0)
+        
+        if now - last_alert > 60: # Nur alle 60 Sekunden einen Alarm pro Coin
             direction = "🚀" if diff > 0 else "🩸"
             msg = f"{direction} ALARM: {symbol}\nBewegung: {diff:+.2f}% (1m)\nPreis: {current}"
             send_telegram_msg(msg)
-            st.session_state[alert_key] = True
+            st.session_state[f"{alert_key}_time"] = now
 
     color = "#00ff00" if diff >= 0 else "#ff4b4b"
     return f'<span style="color:{color}">{diff:+.2f}%</span>'
@@ -100,16 +105,16 @@ while True:
 
             p_format = f"{curr:,.6f}" if is_alpha else f"{curr:,.2f}"
             
-            # Wir nutzen das 1m Intervall für den Alarm
+            # Alarm nur für 1m Spalte prüfen
             chg_1m_html = calc_change_and_alarm(s, curr, p_1m, threshold=0.4)
 
             rows.append({
                 "Symbol": s, "Preis": p_format,
-                "10s": calc_change_and_alarm(s, curr, p_10s, threshold=999), # Kein Alarm für 10s
+                "10s": calc_change_and_alarm(s, curr, p_10s, threshold=99.0),
                 "1m": chg_1m_html,
-                "5m": calc_change_and_alarm(s, curr, p_5m, threshold=999),
-                "1h": calc_change_and_alarm(s, curr, p_1h, threshold=999),
-                "00:00": calc_change_and_alarm(s, curr, p_day, threshold=999)
+                "5m": calc_change_and_alarm(s, curr, p_5m, threshold=99.0),
+                "1h": calc_change_and_alarm(s, curr, p_1h, threshold=99.0),
+                "00:00": calc_change_and_alarm(s, curr, p_day, threshold=99.0)
             })
         return pd.DataFrame(rows)
 
