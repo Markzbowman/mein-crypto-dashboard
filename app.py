@@ -11,7 +11,7 @@ st.set_page_config(page_title="Binance Alpha Dashboard", layout="wide")
 # Favoriten Definition
 SPOT_FAVS = ["BTCUSDT", "BNBUSDT", "XRPUSDT", "ETHUSDT", "ZECUSDT"]
 ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
-ALPHA_URL = "https://binance.com"
+ALPHA_URL = "https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36"}
 
 # --- TELEGRAM ALARM FUNKTION ---
