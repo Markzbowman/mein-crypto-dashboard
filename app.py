@@ -30,19 +30,34 @@ ALPHA_FAVS = ["ARIA", "RIVER", "SIREN"]
 # --- FUNKTIONEN ---
 
 def send_telegram_msg(text):
-    # KORREKTE URL-Zusammensetzung
-    token = st.secrets["TELEGRAM_TOKEN"]
-    chat_id = st.secrets["TELEGRAM_CHAT_ID"]
-    
-    # WICHTIG: Das Wort 'bot' muss direkt vor den Token
-    url = f"https://telegram.org{token}/sendMessage"
-    
     try:
-        r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=5)
+        # 1. Daten sicher aus den Streamlit Secrets laden
+        t_token = st.secrets["TELEGRAM_TOKEN"]
+        t_chat_id = st.secrets["TELEGRAM_CHAT_ID"]
+        
+        # 2. Die URL Stück für Stück zusammensetzen
+        base_url = "https://telegram.org"
+        bot_part = "/bot"
+        command_part = "/sendMessage"
+        
+        # Hier werden die Teile verschmolzen: api.telegram.org + /bot + TOKEN + /sendMessage
+        full_url = base_url + bot_part + t_token + command_part
+        
+        # 3. Die Nachricht absenden
+        payload = {
+            "chat_id": t_chat_id,
+            "text": text
+        }
+        
+        r = requests.post(full_url, json=payload, timeout=5)
+        
+        # Fehlerprüfung
         if r.status_code != 200:
-            st.error(f"Telegram Fehler (Code {r.status_code}): {r.text}")
+            st.error(f"Fehler-Details: {r.text}")
+            
     except Exception as e:
-        st.error(f"Verbindungsfehler zu Telegram: {e}")
+        st.error(f"Technischer Fehler beim Zusammenbau: {e}")
+
 
 
 def get_closest_price(symbol, minutes=None, midnight=False):
