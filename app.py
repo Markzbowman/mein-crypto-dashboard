@@ -81,7 +81,7 @@ while True:
             diff = ((curr - p_1m) / p_1m) * 100
             
             # Wir prüfen die Schwelle
-            if abs(diff) >= 0.6:
+            if abs(diff) >= 1.0:
                 # Nur alle 5 Minuten einen Alarm pro Coin, um Spam zu vermeiden
                 last_alert_time = st.session_state.alerts_sent.get(s)
                 if last_alert_time is None or (time.time() - last_alert_time > 120):
