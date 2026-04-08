@@ -80,8 +80,8 @@ while True:
         if curr > 0 and p_1m:
             diff = ((curr - p_1m) / p_1m) * 100
             
-            # Wir prüfen die 0.4% Schwelle
-            if abs(diff) >= 0.4:
+            # Wir prüfen die Schwelle
+            if abs(diff) >= 0.6:
                 # Nur alle 5 Minuten einen Alarm pro Coin, um Spam zu vermeiden
                 last_alert_time = st.session_state.alerts_sent.get(s)
                 if last_alert_time is None or (time.time() - last_alert_time > 120):
@@ -109,7 +109,7 @@ while True:
                 if not o: return "---"
                 d = ((c-o)/o)*100
                 color = "#00ff00" if d >= 0 else "#ff4b4b"
-                return f'<span style="color:{color}">{d:+.2f}%</span>'
+                return f'<span style="color:{color}">{d:+.2f}</span>'
 
             rows.append({
                 "Symbol": s, "Preis": f"{curr:,.6f}" if is_alpha else f"{curr:,.2f}",
